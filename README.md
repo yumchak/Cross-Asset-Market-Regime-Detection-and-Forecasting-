@@ -2,15 +2,16 @@
 
 ## What This Project Does
 
-This project builds an end-to-end data science pipeline that identifies 
-hidden structural patterns in complex time series data using unsupervised 
-machine learning, then tests whether those patterns improve predictive 
-accuracy in a supervised forecasting model.
+This project builds an end-to-end quantitative data science pipeline 
+that identifies hidden structural patterns in complex time series data 
+using unsupervised machine learning, then tests whether those patterns 
+improve the accuracy of a supervised classification model.
 
-The application is financial markets, but the core methodology, finding 
-hidden regime shifts in data without labelled examples, is directly 
+The application is financial markets, but the core methodology — finding 
+hidden regime shifts in data without labelled examples — is directly 
 transferable to any domain where an organisation faces structural changes 
 in demand, behaviour, or resource needs.
+
 
 ---
 
@@ -18,8 +19,8 @@ in demand, behaviour, or resource needs.
 
 Can a Gaussian Hidden Markov Model identify latent market regimes from 
 cross-asset financial data without any labelled training data, and does 
-conditioning an XGBoost return forecast on the current regime improve 
-directional accuracy versus a baseline model?
+conditioning an XGBoost direction classifier on the current regime improve 
+walk-forward accuracy versus a baseline model?
 
 ---
 
@@ -36,59 +37,110 @@ to present:
 
 ---
 
-## Pipeline
+## Methods
 
-**Step 1 — Feature engineering**
-Four features computed from raw price data: 20-day rolling volatility, 
-20-day momentum, VIX level, and a credit risk proxy from high-yield 
-bond returns.
+**Feature Engineering**
+Four rolling features from daily closing prices: SPY 20-day volatility,
+SPY 20-day momentum, VIX level, HYG 20-day return.
+Normalised with StandardScaler before model fitting.
 
-**Step 2 — Unsupervised regime detection (Gaussian HMM)**
-A Hidden Markov Model is fitted to the normalised feature matrix. 
-No labels are provided. The model discovers that market days fall 
-into two distinct structural states, which correspond closely to 
-calm and stressed market environments when inspected against 
-historical events. Validated with a two-sample t-test confirming 
-the two regimes have statistically distinct return distributions.
+**Gaussian HMM (unsupervised)**
+Fitted to normalised feature matrix with 2 hidden states via 
+Expectation-Maximisation. Assigns a regime label to every trading 
+day without any labelled training data.
 
-**Step 3 — Supervised forecasting (XGBoost, walk-forward)**
-An XGBoost classifier predicts next-week market return direction. 
-Run twice: once with raw features only, once with the HMM regime 
-label added. Walk-forward accuracy and F1 score compared across 
-both to isolate the contribution of regime information.
+**Statistical Validation**
+T-test confirms regimes do not differ in average return (p = 0.127).
+Levene test confirms regimes differ significantly in volatility 
+(p ≈ 0.000, 2.33x ratio).
 
-
+**XGBoost Walk-Forward Classification**
+Binary classifier predicting next-week SPY return direction.
+Train on 3 years, predict next 6 months, roll forward across 26 folds.
+Model A uses 4 raw features. Model B adds the HMM regime label as a 
+5th feature. Evaluated on accuracy and F1 score.
 
 ---
 
-## Why This Methodology Matters Beyond Finance
+## Key Results
 
-The most important insight from this project is not financial. It is 
-methodological.
+### Regime Detection
 
-Hidden Markov Models find structure in data that human labellers 
-cannot easily see. They identify when a system has shifted into a 
-different behavioural state, without being told what those states 
-are in advance.
+| Metric | Calm Regime | Stressed Regime |
+|--------|-------------|-----------------|
+| Trading days | 2,691 (65%) | 1,429 (35%) |
+| Average VIX | 15.1 | 24.8 |
+| Daily return std | 0.0068 | 0.0158 |
+| Volatility ratio | — | 2.33x higher |
 
-This has direct applications for organisations facing structural 
-shifts in demand or need:
+The model correctly identifies known stress periods including the 2011 
+European debt crisis, 2015-16 China growth scare, March 2020 Covid 
+crash, and 2022 Fed rate hike bear market — without being given any 
+information about real-world events.
 
-- A food bank experiencing high-demand and low-demand regimes 
-  driven by economic conditions and benefit payment cycles could 
-  use an HMM on public economic indicators to anticipate regime 
-  shifts and plan procurement and staffing accordingly.
+### Forecasting Results
 
-- A social enterprise tracking engagement or usage data could 
-  identify when their user base has structurally shifted behaviour, 
-  enabling earlier and more targeted interventions.
+| Model | Accuracy | F1 Score |
+|-------|----------|----------|
+| Model A (no regime) | 56.7% | 0.683 |
+| Model B (with regime) | 56.9% | 0.684 |
+| Improvement | +0.18pp | +0.001 |
+| Naive baseline | 61.4% | — |
 
-- An NGO allocating resources across multiple programmes could 
-  detect which programmes are entering a high-need phase before 
-  that need becomes visible in aggregate statistics.
+### Feature Importance (Model B)
 
-The same pipeline built here, feature engineering from available 
-data, unsupervised regime identification, supervised decision 
-support, applies directly to these problems.
+| Feature | Importance | Rank |
+|---------|------------|------|
+| Regime (HMM label) | 0.256 | 1st |
+| VIX Level | 0.199 | 2nd |
+| SPY Volatility | 0.185 | 3rd |
+| SPY Momentum | 0.183 | 4th |
+| HYG Return | 0.177 | 5th |
 
+The regime label ranked 1st out of 5 features despite the modest 
+accuracy improvement, suggesting it captures a compressed summary 
+of market conditions that individual features cannot fully replicate.
+---
+
+## Visualisations
+
+### 1. SPY Price with HMM-Detected Regimes
+![Regime Chart](images/regime_chart.png)
+
+### 2. Return Distributions by Regime
+![Return Distributions](images/return_distributions.png)
+
+### 3. XGBoost Feature Importance
+![Feature Importance](images/feature_importance.png)
+
+### 4. Walk-Forward Model Comparison
+![Model Comparison](images/model_comparison.png)
+
+---
+
+## Interpretation
+
+The modest accuracy improvement (+0.18pp) is consistent with the 
+efficient market hypothesis. In liquid markets, large and persistent 
+forecasting edges are quickly arbitraged away. The more meaningful 
+finding is that:
+
+1. The HMM successfully discovers real market structure without labels
+2. The regime label is the most informative single feature available
+3. The regimes are statistically validated with extremely high confidence
+
+This project is not claiming to predict markets profitably. It is 
+demonstrating a rigorous end-to-end pipeline for unsupervised 
+structural discovery followed by supervised evaluation — a methodology 
+with broad applicability.
+
+---
+## Limitations
+
+- Only 5 assets and 4 features used
+- 2-state HMM may oversimplify market dynamics
+- No transaction costs or slippage modelled
+- Walk-forward accuracy below naive baseline (61.4%)
+- HMM regime labels sensitive to random seed without fixing 
+  random_state
 
